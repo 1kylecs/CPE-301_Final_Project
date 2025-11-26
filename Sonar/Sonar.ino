@@ -1,4 +1,9 @@
 
+void setupSonar(const int trigPin, const int echoPin) {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+}
+
 float getDistance(const int trigPin, const int echoPin) {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
