@@ -1,4 +1,4 @@
-#include <Servo.h>
+/* #include <Servo.h>
 #include <LiquidCrystal.h>
 
 //set pin constants
@@ -128,4 +128,150 @@ void loop() {
   }
 
   delay(50); //50ms delay
+}
+*/ 
+#include <LiquidCrystal.h>
+#include <Servo.h>
+
+//set pin constants
+const int trigPin = 3;
+const int echoPin = 2;
+const int servoPin = 4;
+const int potPin = A0;
+
+const int scanLED = 11; //yellow
+const int offLED = 12; //blue
+const int detectLED = 10; //green
+
+const int buzzerPin = 13;
+
+//create servo obj
+Servo myservo;
+int lastAngle = -1;
+
+//mapping the lcd
+const int lcdRS = 47;
+const int lcdEN = 45;
+const int lcdD4 = 43;
+const int lcdD5 = 41;
+const int lcdD6 = 39;
+const int lcdD7 = 37;
+LiquidCrystal lcd(lcdRS, lcdEN, lcdD4, lcdD5, lcdD6, lcdD7);
+
+//LED enum states
+enum DeviceState { OFF, SCAN, DETECT };
+DeviceState currentState = OFF; //default to off
+
+bool rotateServo() {
+  int val = analogRead(potPin);
+  int angle = map(val, 0, 1023, 0, 180);
+
+  if(angle != lastAngle) {
+    myservo.write(angle);
+    lastAngle = angle;
+    delay(15);
+    return true;
+  }
+  return false;
+}
+
+//distance helper function
+float getDistance() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  float duration = pulseIn(echoPin, HIGH, 30000);
+  return (duration * 0.001125) / 2;
+}
+
+void setup() {
+  Serial.begin(9600);
+  
+  pinMode(scanLED, OUTPUT);
+  pinMode(detectLED, OUTPUT);
+  pinMode(offLED, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  digitalWrite(scanLED, LOW);
+  digitalWrite(detectLED, LOW);
+  digitalWrite(offLED, LOW);
+  digitalWrite(buzzerPin, LOW);
+
+  lcd.begin(16, 2);
+
+  myservo.attach(servoPin);
+  rotateServo();
+  
+}
+
+void loop() {
+
+  bool rotated = rotateServo();
+
+  if (rotated) {
+    Serial.println("Change State to OFF after rotating");
+    currentState = OFF;
+  }
+  else {
+    if (currentState == OFF) {
+      currentState = SCAN;
+      Serial.println("Finished moving, change state to scan.");
+      
+    } else {
+      float distance = getDistance();
+
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("Distance: ");
+      lcd.print(distance);
+
+      if (distance > 1.0 && currentState == DETECT) {
+        currentState = SCAN;
+        Serial.println("Stop detecting, moved outside 1ft");
+      }
+      else if (distance <= 1.0){
+        if (currentState != DETECT) {
+          currentState = DETECT;
+          Serial.println("Moved within a foot, detecting");
+        }
+
+        
+      }
+    }
+  }  
+
+  digitalWrite(scanLED, LOW);
+  digitalWrite(detectLED, LOW);
+  digitalWrite(offLED, LOW);
+
+  lcd.setCursor(0, 1);
+  lcd.write("               "); // poor mans clear to only change bottom line
+  lcd.setCursor(0,1);
+
+
+  switch(currentState){
+    case OFF:
+        digitalWrite(offLED, HIGH);
+        lcd.print("OFF");
+        break;
+
+    case SCAN:
+        digitalWrite(scanLED, HIGH);
+        lcd.print("SCAN");
+        break;
+
+    case DETECT:
+        digitalWrite(detectLED, HIGH);
+        lcd.print("DETECT");
+        break;
+  }
+
+  delay(500);
+  
 }
