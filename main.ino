@@ -7,10 +7,10 @@ const int echoPin = 10;
 const int servoPin = 8;
 const int potPin = A0;
 
-const int scanLED = 23;
-const int idleLED = 25;
-const int detectLED = 27;
-const int errorLED = 29;
+const int scanLED = 23; //yellow
+const int idleLED = 25; //red
+const int detectLED = 27; //green
+const int errorLED = 29; //blue
 
 const int buzzerPin = 12;
 
