@@ -2,11 +2,6 @@
 #include <Servo.h>
 
 /* HARDWARE REGISTERS */
-#define OUTPUT 1
-#define INPUT 0
-#define HIGH 1
-#define LOW 0
-
 #define RDA 0x80
 #define TBE 0x20
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
@@ -28,22 +23,28 @@ volatile unsigned char *my_DDRD  = (unsigned char *)0x2A;
 volatile unsigned char *my_PORTD = (unsigned char *)0x2B;
 volatile unsigned char *my_PIND  = (unsigned char *)0x29;
 
+/* Pin lables
+ *  echoPin   - pin 2  - regD bit 2
+ *  trigPin   - pin 3  - regD bit 3
+ *  
+ *  greenLED  - pin 10 - regB bit 4
+ *  yellowLED - pin 11 - regB bit 5
+ *  blueLED   - pin 12 - regB bit 6
+ *  buzzer    - pin 13 - regB but 7
+ */
+
 
 
 /* CONSTANTS */
+
+
+const int potPin = A0;
+const int echoPin = 2; // need for pulseIn later
 const int trigPin = 3;
-const int echoPin = 2;
-const int servoPin = 4;
-const int potPin = 0;
-
-const int scanLED = 11; //yellow
-const int offLED = 12; //blue
-const int detectLED = 10; //green
-
-const int buzzerPin = 13;
 
 //create servo obj
 Servo myservo;
+const int servoPin = 4;
 int lastAngle = -1;
 
 //mapping the lcd
@@ -58,19 +59,22 @@ DeviceState currentState = OFF; //default to off
 void setup() {
   U0init(9600);
   
-  myPinMode(scanLED, OUTPUT);
-  myPinMode(detectLED, OUTPUT);
-  myPinMode(offLED, OUTPUT);
-  myPinMode(buzzerPin, OUTPUT);
+  // set output for LEDs, Buzzer
+  *my_DDRB |= (0b11110000);
 
-  myPinMode(trigPin, OUTPUT);
-  myPinMode(echoPin, INPUT);
+  // set trig as output
+  *my_DDRD |= (1 << 3);
 
-  myDigitalWrite(scanLED, LOW);
-  myDigitalWrite(detectLED, LOW);
-  myDigitalWrite(offLED, LOW);
-  myDigitalWrite(buzzerPin, LOW);
+  // set echo as input
+  *my_DDRD &= ~(1<< 2);
+  
 
+  // start all outputs as low
+  *my_PORTB &= ~(0b11110000);
+ 
+  *my_PORTD &= ~(1 << 3);
+
+  // setup LCD and servo
   lcd.begin(16, 2);
 
   myservo.attach(servoPin);
@@ -114,9 +118,8 @@ void loop() {
     }
   }  
 
-  myDigitalWrite(scanLED, LOW);
-  myDigitalWrite(detectLED, LOW);
-  myDigitalWrite(offLED, LOW);
+  // set all LEDs low
+  *my_PORTB &= ~(0b01110000);
 
   lcd.setCursor(0, 1);
   lcd.write("               "); // poor mans clear to only change bottom line
@@ -125,17 +128,17 @@ void loop() {
 
   switch(currentState){
     case OFF:
-        myDigitalWrite(offLED, HIGH);
+        *my_PORTB |= (1 << 6);
         lcd.print("OFF");
         break;
 
     case SCAN:
-        myDigitalWrite(scanLED, HIGH);
+        *my_PORTB |= (1 << 5);
         lcd.print("SCAN");
         break;
 
     case DETECT:
-        myDigitalWrite(detectLED, HIGH);
+        *my_PORTB |= (1 << 4);
         lcd.print("DETECT");
         break;
   }
@@ -162,14 +165,17 @@ bool rotateServo() {
 
 //distance helper function
 float getDistance() {
-  myDigitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  myDigitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  myDigitalWrite(trigPin, LOW);
+    // trigger the sensor
+    *my_PORTD &= ~(1 << 3);  // trig LOW
+    delayMicroseconds(2);
+    *my_PORTD |= (1 << 3);   // trig HIGH
+    delayMicroseconds(10);
+    *my_PORTD &= ~(1 << 3);  // trig LOW
 
-  float duration = pulseIn(echoPin, HIGH, 30000);
-  return (duration * 0.001125) / 2;
+    float duration = pulseIn(echoPin, HIGH, 30000);
+
+    // convert duration to distance in feet
+    return (duration * 0.001125) / 2;
 }
 
 
@@ -203,102 +209,6 @@ void U0println(const char* s)
     s++;
   }
   U0putchar('\n');
-}
-
-/* CUSTOM digitalWrite / pinMode */
-
-void myPinMode(uint8_t pin, uint8_t mode) {
-    // take what pin number given, find the right DDR and set to either 0 or 1
-    switch(pin) {
-        case 2: // PD2
-            if (mode) *my_DDRD |=  (1 << 2);
-            else      *my_DDRD &= ~(1 << 2);
-            break;
-
-        case 3: // PD3
-            if (mode) *my_DDRD |=  (1 << 3);
-            else      *my_DDRD &= ~(1 << 3);
-            break;
-
-        case 4: // PD4
-            if (mode) *my_DDRD |=  (1 << 4);
-            else      *my_DDRD &= ~(1 << 4);
-            break;
-
-        case 10: // PB4
-            if (mode) *my_DDRB |=  (1 << 4);
-            else      *my_DDRB &= ~(1 << 4);
-            break;
-
-        case 11: // PB5
-            if (mode) *my_DDRB |=  (1 << 5);
-            else      *my_DDRB &= ~(1 << 5);
-            break;
-
-        case 12: // PB6
-            if (mode) *my_DDRB |=  (1 << 6);
-            else      *my_DDRB &= ~(1 << 6);
-            break;
-
-        case 13: // PB7
-            if (mode) *my_DDRB |=  (1 << 7);
-            else      *my_DDRB &= ~(1 << 7);
-            break;
-    }
-}
-
-void myDigitalWrite(uint8_t pin, uint8_t val) {
-    // take what pin number given, find the right port and set to either 0 or 1
-    switch(pin) {
-        case 2:
-            if (val) *my_PORTD |=  (1 << 2);
-            else     *my_PORTD &= ~(1 << 2);
-            break;
-
-        case 3:
-            if (val) *my_PORTD |=  (1 << 3);
-            else     *my_PORTD &= ~(1 << 3);
-            break;
-
-        case 4:
-            if (val) *my_PORTD |=  (1 << 4);
-            else     *my_PORTD &= ~(1 << 4);
-            break;
-
-        case 10:
-            if (val) *my_PORTB |=  (1 << 4);
-            else     *my_PORTB &= ~(1 << 4);
-            break;
-
-        case 11:
-            if (val) *my_PORTB |=  (1 << 5);
-            else     *my_PORTB &= ~(1 << 5);
-            break;
-
-        case 12:
-            if (val) *my_PORTB |=  (1 << 6);
-            else     *my_PORTB &= ~(1 << 6);
-            break;
-
-        case 13:
-            if (val) *my_PORTB |=  (1 << 7);
-            else     *my_PORTB &= ~(1 << 7);
-            break;
-    }
-}
-
-uint8_t myDigitalRead(uint8_t pin) {
-    switch (pin) {
-        case 2:  return (*my_PIND & (1 << 2)) != 0;
-        case 3:  return (*my_PIND & (1 << 3)) != 0;
-        case 4:  return (*my_PIND & (1 << 4)) != 0;
-
-        case 10: return (*my_PINB & (1 << 4)) != 0;
-        case 11: return (*my_PINB & (1 << 5)) != 0;
-        case 12: return (*my_PINB & (1 << 6)) != 0;
-        case 13: return (*my_PINB & (1 << 7)) != 0;
-    }
-    return 0;
 }
 
 
