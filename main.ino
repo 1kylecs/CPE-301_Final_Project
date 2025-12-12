@@ -2,6 +2,8 @@
 #include <Servo.h>
 
 /* HARDWARE REGISTERS */
+#define RDA 0x80
+#define TBE 0x20
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
 volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
 volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2;
@@ -17,7 +19,7 @@ volatile unsigned int *my_ADC_DATA = (unsigned int*) 0x78;
 const int trigPin = 3;
 const int echoPin = 2;
 const int servoPin = 4;
-const int potPin = A0;
+const int potPin = 0;
 
 const int scanLED = 11; //yellow
 const int offLED = 12; //blue
@@ -39,6 +41,7 @@ DeviceState currentState = OFF; //default to off
 /* MAIN FUNCTIONS */
 void setup() {
   U0init(9600);
+  adc_init();
   
   pinMode(scanLED, OUTPUT);
   pinMode(detectLED, OUTPUT);
@@ -130,7 +133,7 @@ void loop() {
 
 /* HELPER FUNCTIONS */
 bool rotateServo() {
-  int val = analogRead(potPin);
+  int val = adc_read(potPin);
   int angle = map(val, 0, 1023, 0, 180);
 
   if(angle != lastAngle) {
