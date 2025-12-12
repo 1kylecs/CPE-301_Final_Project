@@ -248,7 +248,7 @@ bool rotateServo() {
 //distance helper function
 float getDistance() {
   myDigitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
+  delayMicroseconds(2); //delayMicroseconds() is needed so that we can have accurate distance readings, otherwise might be inaccurate with milliseconds and not microseconds
   myDigitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   myDigitalWrite(trigPin, LOW);
@@ -486,7 +486,7 @@ unsigned int adc_read(unsigned char adc_channel_num)  //work with channel 0
 
 //pulseIn to work with getDistance() and myDigitalRead()
 unsigned long myPulseIn(uint8_t pin, uint8_t state, unsigned long timeout) {
-  unsigned long start = micros();
+  unsigned long start = micros(); //using micros similar to delayMicroseconds(), need higher precision for the ultrasonic sensor to read distance accurately
 
   //waits for pin to read a certain state
   while (myDigitalRead(pin) != state) {
