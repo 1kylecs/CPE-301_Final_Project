@@ -1,5 +1,8 @@
 #include <LiquidCrystal.h>
 #include <Servo.h>
+#include <Wire.h>
+#include <RTClib.h>
+
 
 /* HARDWARE REGISTERS */
 #define OUTPUT 1
@@ -24,6 +27,10 @@ volatile unsigned char *my_DDRB = (unsigned char *)0x24;
 volatile unsigned char *my_PORTB = (unsigned char *)0x25;
 volatile unsigned char *my_PINB = (unsigned char *)0x23;
 
+volatile unsigned char *my_DDRD = (unsigned char *)0x2A;
+volatile unsigned char *my_PORTD = (unsigned char *)0x2B;
+volatile unsigned char *my_PIND = (unsigned char *)0x29;
+
 volatile unsigned char *my_DDRE = (unsigned char *)0x2D;   // DDRE
 volatile unsigned char *my_PORTE = (unsigned char *)0x2E;  // PORTE
 volatile unsigned char *my_PINE = (unsigned char *)0x2C;   // PINE
@@ -33,17 +40,18 @@ volatile unsigned char *my_PORTG = (unsigned char *)0x34;  // PORTG
 volatile unsigned char *my_PING = (unsigned char *)0x32;   // PING
 
 /* CONSTANTS */
-const int potPin = 0;  // A0
+const int trigPin = 3;
+const int echoPin = 2;
+const int servoPin = 4;
+const int potPin = 0;
 
-const int echoPin =   2;  // PE4
-const int trigPin =   3;  // PE5
-const int servoPin =  4;  // PG5
-const int buttonPin = 5;  // PE3
+const int scanLED = 11;    //yellow
+const int offLED = 12;     //blue
+const int detectLED = 10;  //green
 
-const int detectLED = 10; // PB4
-const int scanLED = 11;   // PB5
-const int offLED = 12;    // PB6
-const int buzzerPin = 13; // PB7
+const int buzzerPin = 13;
+
+const int buttonPin = 5;
 
 //millis
 unsigned long lastPrint = 0;
@@ -53,9 +61,22 @@ static unsigned long lastUpdate = 0;
 unsigned long lastServoUpdate = 0;
 const unsigned long servoDelay = 15;  //to replace delay(15) with just millis()
 
+//loop delay interval
+unsigned long lastLoopUpdate = 0;       // tracks last update time
+const unsigned long loopInterval = 50;  // 50ms interval instead of delay()
+
+//button
+unsigned long lastButtonTime = 0;
+const unsigned long buttonDebounce = 200;  // ms
+bool lastButtonState = LOW;
+bool buttonPressed = false;
+
 //create servo obj
 Servo myservo;
 int lastAngle = -1;
+
+//create rtc object
+RTC_DS3231 rtc;
 
 //mapping the lcd
 LiquidCrystal lcd(47, 45, 43, 41, 39, 37);
@@ -66,17 +87,27 @@ enum DeviceState { OFF,
                    DETECT };
 //default states to off for
 DeviceState currentState = OFF;  //default to off
+DeviceState lastState = OFF;     //default to off
+
 
 /* MAIN FUNCTIONS */
 void setup() {
   U0init(9600);
   adc_init();
 
+  //setup rtc for timestamps
+  Wire.begin();
+  if (!rtc.begin()) {
+    U0println("RTC not found!");
+    while (1)
+      ;
+  }
+  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));  //updates current time
+
   myPinMode(scanLED, OUTPUT);
   myPinMode(detectLED, OUTPUT);
   myPinMode(offLED, OUTPUT);
   myPinMode(buzzerPin, OUTPUT);
-  myPinMode(buttonPin, INPUT);
 
   myPinMode(trigPin, OUTPUT);
   myPinMode(echoPin, INPUT);
@@ -89,94 +120,113 @@ void setup() {
   lcd.begin(16, 2);
 
   myservo.attach(servoPin);
+  rotateServo();
 }
 
 void loop() {
-    bool buttonClicked = (HIGH == myDigitalRead(buttonPin));
+  bool buttonClicked = checkButton();
 
-    switch (currentState) {
-        case OFF: {
-            // blue LED on, others off
-            myDigitalWrite(scanLED, LOW);
-            myDigitalWrite(detectLED, LOW);
-            myDigitalWrite(offLED, HIGH);
+  switch (currentState) {
+    case OFF:
+      {
+        //leds
+        myDigitalWrite(scanLED, LOW);
+        myDigitalWrite(detectLED, LOW);
+        myDigitalWrite(offLED, HIGH);
+        myDigitalWrite(buzzerPin, LOW);
 
-            // read potentiometer and move servo
-            rotateServo();
+        //rotates servo
+        rotateServo();
 
-            // display angle on LCD
-            lcd.setCursor(0, 0);
-            lcd.print("Angle: ");
-            lcd.print(lastAngle);
+        //dispaly angle on first row
+        lcd.setCursor(0, 0);
+        lcd.print("Angle: ");
+        lcd.print(lastAngle);
+        //fill rest of row with spaces
+        lcd.print("        ");  //enough spaces to fill 16 chars
 
-            // transition to SCAN if button clicked
-            if (buttonClicked) {
-                currentState = SCAN;
-                U0println("Button clicked, transitioning into scan, locking servo");
-            }
-            break;
+        //sets status in second row
+        lcd.setCursor(0, 1);
+        lcd.print("OFF, NO SCAN    ");  //pad with spaces to clear row
+
+        if (buttonClicked) {
+          currentState = SCAN;
+          logMessage("Button clicked, transitioning into scan, locking servo");
+        }
+        break;
+      }
+
+    case SCAN:
+      {
+
+        myDigitalWrite(scanLED, HIGH);
+        myDigitalWrite(detectLED, LOW);
+        myDigitalWrite(offLED, LOW);
+        myDigitalWrite(buzzerPin, LOW);
+
+        float distance = getDistance();
+
+
+        lcd.setCursor(0, 0);
+        lcd.print("Distance: ");
+        lcd.print(distance, 2);  //print to 2 dec accuracy
+        lcd.print("     ");      //pad with spaces to clear row
+
+
+        lcd.setCursor(0, 1);
+        lcd.print("SCANNING...     ");
+
+        if (distance > 0 && distance <= 1.0) {
+          currentState = DETECT;
+          logMessage("Moved within 1ft of scanner, detected");
         }
 
-        case SCAN: {
-            // yellow LED on, others off
-            myDigitalWrite(scanLED, HIGH);
-            myDigitalWrite(detectLED, LOW);
-            myDigitalWrite(offLED, LOW);
+        if (buttonClicked) {
+          currentState = OFF;
+          logMessage("Button pressed, turning sonar off, able to rotate servo");
+        }
+        break;
+      }
 
-            // measure distance
-            float distance = getDistance();
+    case DETECT:
+      {
 
-            // display distance
-            lcd.setCursor(0, 0);
-            lcd.print("Distance: ");
-            lcd.print(distance);
+        myDigitalWrite(scanLED, LOW);
+        myDigitalWrite(detectLED, HIGH);
+        myDigitalWrite(offLED, LOW);
+        myDigitalWrite(buzzerPin, HIGH);
 
-            // transition to DETECT if distance < 5 but not 0 ( 0 means time out, so also invalid)
-            if (distance > 0 && distance < 5.0) {
-                currentState = DETECT;
-                U0println("Moved within 5ft of scanner, detected");
-            }
+        float distance = getDistance();
 
-            // transition to OFF if button clicked
-            if (buttonClicked) {
-                currentState = OFF;
-                U0println("Button pressed, turning sonar off, able to rotate servo");
-            }
-            break;
+
+        lcd.setCursor(0, 0);
+        lcd.print("Distance: ");
+        lcd.print(distance, 2);
+        lcd.print("     ");  //pad to clear
+
+
+        lcd.setCursor(0, 1);
+        lcd.print("DETECTED!       ");  //pad to clear
+
+        if (distance > 1.0) {
+          currentState = SCAN;
+          logMessage("Moved outside 1ft, scanning");
         }
 
-        case DETECT: {
-            // green LED on, others off
-            myDigitalWrite(scanLED, LOW);
-            myDigitalWrite(detectLED, HIGH);
-            myDigitalWrite(offLED, LOW);
-
-            // measure distance
-            float distance = getDistance();
-
-            // display distance
-            lcd.setCursor(0, 0);
-            lcd.print("Distance: ");
-            lcd.print(distance);
-
-            // transition to SCAN if distance > 5
-            if (distance > 5.0) {
-                currentState = SCAN;
-                U0println("Moved outside 5ft, scanning");
-                
-            }
-
-            // transition to OFF if button clicked
-            if (buttonClicked) {
-                currentState = OFF;
-                U0println("Button pressed, turning sonar off, able to rotate servo");
-            }
-            break;
+        if (buttonClicked) {
+          currentState = OFF;
+          logMessage("Button pressed, turning sonar off, able to rotate servo");
         }
-    }
+        break;
+      }
+  }
 
-    delay(200); // short delay to debounce button and reduce flicker
+  // non-blocking loop interval
+  if (millis() - lastLoopUpdate >= loopInterval) {
+    lastLoopUpdate = millis();
+  }
 }
+
 
 
 /* HELPER FUNCTIONS */
@@ -246,7 +296,7 @@ void debugPrint(const char *msg) {
 /* CUSTOM digitalWrite / pinMode */
 
 void myPinMode(uint8_t pin, uint8_t mode) {
- // take what pin number given, find the right DDR and set to either 0 or 1
+  // take what pin number given, find the right DDR and set to either 0 or 1
   switch (pin) {
     case 2:  // PE4
       if (mode) *my_DDRE |= (1 << 4);
@@ -263,7 +313,7 @@ void myPinMode(uint8_t pin, uint8_t mode) {
       else *my_DDRG &= ~(1 << 5);
       break;
 
-    case 5: // PE3
+    case 5:  // PE3
       if (mode) *my_DDRE |= (1 << 3);
       else *my_DDRE &= ~(1 << 3);
       break;
@@ -350,7 +400,30 @@ uint8_t myDigitalRead(uint8_t pin) {
   return LOW;
 }
 
+//button helper function for debounce with millis()
+bool checkButton() {
+  bool reading = myDigitalRead(buttonPin);
+  unsigned long now = millis();
 
+  // If button changed state
+  if (reading != lastButtonState) {
+    lastButtonTime = now;  // reset debounce timer
+  }
+
+  // Only consider the press if it’s stable past debounce time
+  if ((now - lastButtonTime) > buttonDebounce) {
+    if (reading == HIGH && !buttonPressed) {
+      buttonPressed = true;  // single press detected
+      lastButtonState = reading;
+      return true;
+    } else if (reading == LOW) {
+      buttonPressed = false;  // release detected
+    }
+  }
+
+  lastButtonState = reading;
+  return false;
+}
 
 /* ANALOG READ */
 /* ANALOG READ */
@@ -415,17 +488,57 @@ unsigned int adc_read(unsigned char adc_channel_num)  //work with channel 0
 unsigned long myPulseIn(uint8_t pin, uint8_t state, unsigned long timeout) {
   unsigned long start = micros();
 
-  // Wait for pin to go to desired state
+  //waits for pin to read a certain state
   while (myDigitalRead(pin) != state) {
     if (micros() - start > timeout) return 0;
   }
 
   unsigned long pulseStart = micros();
 
-  // Wait for pin to leave desired state
+  //wait for pin to leave state
   while (myDigitalRead(pin) == state) {
     if (micros() - pulseStart > timeout) return 0;
   }
 
   return micros() - pulseStart;
+}
+
+/* --- RTC TIMESTAMP LOGGING --- */
+void twoDigitStr(int num, char *buf) {
+  buf[0] = '0' + num / 10;
+  buf[1] = '0' + num % 10;
+  buf[2] = 0;
+}
+
+void printTimestamp() {
+  DateTime now = rtc.now();
+  char buf[3];
+
+  U0putchar('[');
+
+  //hour
+  twoDigitStr(now.hour(), buf);
+  U0putchar(buf[0]);
+  U0putchar(buf[1]);
+  U0putchar(':');
+
+  //minutes
+  twoDigitStr(now.minute(), buf);
+  U0putchar(buf[0]);
+  U0putchar(buf[1]);
+  U0putchar(':');
+
+  //seconds
+  twoDigitStr(now.second(), buf);
+  U0putchar(buf[0]);
+  U0putchar(buf[1]);
+
+  U0putchar(']');
+  U0putchar(' ');
+}
+
+//prints messgae with timestamp
+void logMessage(const char *msg) {
+  printTimestamp();
+  U0println(msg);
 }
