@@ -2,6 +2,11 @@
 #include <Servo.h>
 
 /* HARDWARE REGISTERS */
+#define OUTPUT 1
+#define INPUT 0
+#define HIGH 1
+#define LOW 0
+
 #define RDA 0x80
 #define TBE 0x20
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
@@ -15,11 +20,21 @@ volatile unsigned char *my_ADCSRB = (unsigned char*) 0x7B;
 volatile unsigned char *my_ADCSRA = (unsigned char*) 0x7A;
 volatile unsigned int *my_ADC_DATA = (unsigned int*) 0x78;
 
+volatile unsigned char *my_DDRB  = (unsigned char *)0x24;
+volatile unsigned char *my_PORTB = (unsigned char *)0x25;
+volatile unsigned char *my_PINB  = (unsigned char *)0x23;
+
+volatile unsigned char *my_DDRD  = (unsigned char *)0x2A;
+volatile unsigned char *my_PORTD = (unsigned char *)0x2B;
+volatile unsigned char *my_PIND  = (unsigned char *)0x29;
+
+
+
 /* CONSTANTS */
 const int trigPin = 3;
 const int echoPin = 2;
 const int servoPin = 4;
-const int potPin = 0;
+const int potPin = A0;
 
 const int scanLED = 11; //yellow
 const int offLED = 12; //blue
@@ -34,27 +49,27 @@ int lastAngle = -1;
 //mapping the lcd
 LiquidCrystal lcd(47, 45, 43, 41, 39, 37);
 
-//LED enum states
+//STATE enum
 enum DeviceState { OFF, SCAN, DETECT };
 DeviceState currentState = OFF; //default to off
+
 
 /* MAIN FUNCTIONS */
 void setup() {
   U0init(9600);
-  adc_init();
   
-  pinMode(scanLED, OUTPUT);
-  pinMode(detectLED, OUTPUT);
-  pinMode(offLED, OUTPUT);
-  pinMode(buzzerPin, OUTPUT);
+  myPinMode(scanLED, OUTPUT);
+  myPinMode(detectLED, OUTPUT);
+  myPinMode(offLED, OUTPUT);
+  myPinMode(buzzerPin, OUTPUT);
 
-  pinMode(trigPin, OUTPUT);
-  pinMode(echoPin, INPUT);
+  myPinMode(trigPin, OUTPUT);
+  myPinMode(echoPin, INPUT);
 
-  digitalWrite(scanLED, LOW);
-  digitalWrite(detectLED, LOW);
-  digitalWrite(offLED, LOW);
-  digitalWrite(buzzerPin, LOW);
+  myDigitalWrite(scanLED, LOW);
+  myDigitalWrite(detectLED, LOW);
+  myDigitalWrite(offLED, LOW);
+  myDigitalWrite(buzzerPin, LOW);
 
   lcd.begin(16, 2);
 
@@ -68,13 +83,13 @@ void loop() {
   bool rotated = rotateServo();
 
   if (rotated) {
-    U0print("Change State to OFF after rotating");
+    U0println("Change State to OFF after rotating");
     currentState = OFF;
   }
   else {
     if (currentState == OFF) {
       currentState = SCAN;
-      U0print("Finished moving, change state to scan.");
+      U0println("Finished moving, change state to scan.");
       
     } else {
       float distance = getDistance();
@@ -86,12 +101,12 @@ void loop() {
 
       if (distance > 1.0 && currentState == DETECT) {
         currentState = SCAN;
-        U0print("Stop detecting, moved outside 1ft");
+        U0println("Stop detecting, moved outside 1ft");
       }
       else if (distance <= 1.0){
         if (currentState != DETECT) {
           currentState = DETECT;
-          U0print("Moved within a foot, detecting");
+          U0println("Moved within a foot, detecting");
         }
 
         
@@ -99,9 +114,9 @@ void loop() {
     }
   }  
 
-  digitalWrite(scanLED, LOW);
-  digitalWrite(detectLED, LOW);
-  digitalWrite(offLED, LOW);
+  myDigitalWrite(scanLED, LOW);
+  myDigitalWrite(detectLED, LOW);
+  myDigitalWrite(offLED, LOW);
 
   lcd.setCursor(0, 1);
   lcd.write("               "); // poor mans clear to only change bottom line
@@ -110,17 +125,17 @@ void loop() {
 
   switch(currentState){
     case OFF:
-        digitalWrite(offLED, HIGH);
+        myDigitalWrite(offLED, HIGH);
         lcd.print("OFF");
         break;
 
     case SCAN:
-        digitalWrite(scanLED, HIGH);
+        myDigitalWrite(scanLED, HIGH);
         lcd.print("SCAN");
         break;
 
     case DETECT:
-        digitalWrite(detectLED, HIGH);
+        myDigitalWrite(detectLED, HIGH);
         lcd.print("DETECT");
         break;
   }
@@ -133,7 +148,7 @@ void loop() {
 
 /* HELPER FUNCTIONS */
 bool rotateServo() {
-  int val = adc_read(potPin);
+  int val = analogRead(potPin);
   int angle = map(val, 0, 1023, 0, 180);
 
   if(angle != lastAngle) {
@@ -147,11 +162,11 @@ bool rotateServo() {
 
 //distance helper function
 float getDistance() {
-  digitalWrite(trigPin, LOW);
+  myDigitalWrite(trigPin, LOW);
   delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
+  myDigitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
+  myDigitalWrite(trigPin, LOW);
 
   float duration = pulseIn(echoPin, HIGH, 30000);
   return (duration * 0.001125) / 2;
@@ -180,25 +195,114 @@ void U0putchar(unsigned char U0pdata)
 }
 
 //print function that uses the previous U0putchar to make strings
-void U0print(const char* s) 
+void U0println(const char* s) 
 {
   while (*s) 
   { 
     U0putchar(*s);       
     s++;
   }
+  U0putchar('\n');
 }
 
 /* CUSTOM digitalWrite / pinMode */
 
-void myPinMode(const int pin) {
-  
+void myPinMode(uint8_t pin, uint8_t mode) {
+    // take what pin number given, find the right DDR and set to either 0 or 1
+    switch(pin) {
+        case 2: // PD2
+            if (mode) *my_DDRD |=  (1 << 2);
+            else      *my_DDRD &= ~(1 << 2);
+            break;
+
+        case 3: // PD3
+            if (mode) *my_DDRD |=  (1 << 3);
+            else      *my_DDRD &= ~(1 << 3);
+            break;
+
+        case 4: // PD4
+            if (mode) *my_DDRD |=  (1 << 4);
+            else      *my_DDRD &= ~(1 << 4);
+            break;
+
+        case 10: // PB4
+            if (mode) *my_DDRB |=  (1 << 4);
+            else      *my_DDRB &= ~(1 << 4);
+            break;
+
+        case 11: // PB5
+            if (mode) *my_DDRB |=  (1 << 5);
+            else      *my_DDRB &= ~(1 << 5);
+            break;
+
+        case 12: // PB6
+            if (mode) *my_DDRB |=  (1 << 6);
+            else      *my_DDRB &= ~(1 << 6);
+            break;
+
+        case 13: // PB7
+            if (mode) *my_DDRB |=  (1 << 7);
+            else      *my_DDRB &= ~(1 << 7);
+            break;
+    }
 }
 
-void myDigitalWrite(const int pin, const bool high) {
-  
+void myDigitalWrite(uint8_t pin, uint8_t val) {
+    // take what pin number given, find the right port and set to either 0 or 1
+    switch(pin) {
+        case 2:
+            if (val) *my_PORTD |=  (1 << 2);
+            else     *my_PORTD &= ~(1 << 2);
+            break;
+
+        case 3:
+            if (val) *my_PORTD |=  (1 << 3);
+            else     *my_PORTD &= ~(1 << 3);
+            break;
+
+        case 4:
+            if (val) *my_PORTD |=  (1 << 4);
+            else     *my_PORTD &= ~(1 << 4);
+            break;
+
+        case 10:
+            if (val) *my_PORTB |=  (1 << 4);
+            else     *my_PORTB &= ~(1 << 4);
+            break;
+
+        case 11:
+            if (val) *my_PORTB |=  (1 << 5);
+            else     *my_PORTB &= ~(1 << 5);
+            break;
+
+        case 12:
+            if (val) *my_PORTB |=  (1 << 6);
+            else     *my_PORTB &= ~(1 << 6);
+            break;
+
+        case 13:
+            if (val) *my_PORTB |=  (1 << 7);
+            else     *my_PORTB &= ~(1 << 7);
+            break;
+    }
 }
 
+uint8_t myDigitalRead(uint8_t pin) {
+    switch (pin) {
+        case 2:  return (*my_PIND & (1 << 2)) != 0;
+        case 3:  return (*my_PIND & (1 << 3)) != 0;
+        case 4:  return (*my_PIND & (1 << 4)) != 0;
+
+        case 10: return (*my_PINB & (1 << 4)) != 0;
+        case 11: return (*my_PINB & (1 << 5)) != 0;
+        case 12: return (*my_PINB & (1 << 6)) != 0;
+        case 13: return (*my_PINB & (1 << 7)) != 0;
+    }
+    return 0;
+}
+
+
+/* ANALOG READ */
 /* ANALOG READ */
 void adc_init()
 {
@@ -256,3 +360,4 @@ unsigned int adc_read(unsigned char adc_channel_num) //work with channel 0
   unsigned int val = *my_ADC_DATA;
   return val;
 }
+
