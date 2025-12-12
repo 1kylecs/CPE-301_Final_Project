@@ -23,9 +23,16 @@ volatile unsigned char *my_DDRD  = (unsigned char *)0x2A;
 volatile unsigned char *my_PORTD = (unsigned char *)0x2B;
 volatile unsigned char *my_PIND  = (unsigned char *)0x29;
 
+volatile unsigned char *my_DDRH  = (unsigned char *)0x31;
+volatile unsigned char *my_PORTH = (unsigned char *)0x30;
+volatile unsigned char *my_PINH  = (unsigned char *)0x2F;
+
+
 /* Pin lables
  *  echoPin   - pin 2  - regD bit 2
  *  trigPin   - pin 3  - regD bit 3
+ *  
+ *  button    - pin 4  - regD bit 4
  *  
  *  greenLED  - pin 10 - regB bit 4
  *  yellowLED - pin 11 - regB bit 5
@@ -38,13 +45,13 @@ volatile unsigned char *my_PIND  = (unsigned char *)0x29;
 /* CONSTANTS */
 
 
-const int potPin = A0;
+const int potPin = 0;
 const int echoPin = 2; // need for pulseIn later
 const int trigPin = 3;
 
 //create servo obj
 Servo myservo;
-const int servoPin = 4;
+const int servoPin = 53;
 int lastAngle = -1;
 
 //mapping the lcd
@@ -62,6 +69,10 @@ void setup() {
   // set output for LEDs, Buzzer
   *my_DDRB |= (0b11110000);
 
+  // button is input
+  //*my_DDRD &= ~(1 << 4);
+  pinMode(4, INPUT);
+
   // set trig as output
   *my_DDRD |= (1 << 3);
 
@@ -71,8 +82,9 @@ void setup() {
 
   // start all outputs as low
   *my_PORTB &= ~(0b11110000);
- 
   *my_PORTD &= ~(1 << 3);
+
+  adc_init();
 
   // setup LCD and servo
   lcd.begin(16, 2);
@@ -83,81 +95,108 @@ void setup() {
 }
 
 void loop() {
+    bool buttonClicked = (HIGH == digitalRead(4));
 
-  bool rotated = rotateServo();
+    switch (currentState) {
+        case OFF: {
+            // blue LED on, others off
+            *my_PORTB &= ~(0b01110000);
+            *my_PORTB |= (1 << 6);
 
-  if (rotated) {
-    U0println("Change State to OFF after rotating");
-    currentState = OFF;
-  }
-  else {
-    if (currentState == OFF) {
-      currentState = SCAN;
-      U0println("Finished moving, change state to scan.");
-      
-    } else {
-      float distance = getDistance();
+            // read potentiometer and move servo
+            rotateServo();
 
-      lcd.clear();
-      lcd.setCursor(0,0);
-      lcd.print("Distance: ");
-      lcd.print(distance);
+            // display angle on LCD
+            lcd.setCursor(0, 0);
+            lcd.print("Angle: ");
+            lcd.print(lastAngle);
 
-      if (distance > 1.0 && currentState == DETECT) {
-        currentState = SCAN;
-        U0println("Stop detecting, moved outside 1ft");
-      }
-      else if (distance <= 1.0){
-        if (currentState != DETECT) {
-          currentState = DETECT;
-          U0println("Moved within a foot, detecting");
+            // transition to SCAN if button clicked
+            if (buttonClicked) {
+                currentState = SCAN;
+                U0println("Button clicked, transitioning into scan, locking servo");
+            }
+            break;
         }
 
-        
-      }
+        case SCAN: {
+            // yellow LED on, others off
+            *my_PORTB &= ~(0b01110000);
+            *my_PORTB |= (1 << 5);
+
+            // measure distance
+            float distance = getDistance();
+
+            // display distance
+            lcd.setCursor(0, 0);
+            lcd.print("Distance: ");
+            lcd.print(distance);
+
+            // transition to DETECT if distance < 5 but not 0 ( 0 means time out, so also invalid)
+            if (distance > 0 && distance < 5.0) {
+                currentState = DETECT;
+                U0println("Moved within 5ft of scanner, detected");
+            }
+
+            // transition to OFF if button clicked
+            if (buttonClicked) {
+                currentState = OFF;
+                U0prinln("Button pressed, turning sonar off, able to rotate servo");
+            }
+            break;
+        }
+
+        case DETECT: {
+            // green LED on, others off
+            *my_PORTB &= ~(0b01110000);
+            *my_PORTB |= (1 << 4);
+
+            // measure distance
+            float distance = getDistance();
+
+            // display distance
+            lcd.setCursor(0, 0);
+            lcd.print("Distance: ");
+            lcd.print(distance);
+
+            // transition to SCAN if distance > 5
+            if (distance > 5.0) {
+                currentState = SCAN;
+                U0println("Moved outside 5ft, scanning");
+                
+            }
+
+            // transition to OFF if button clicked
+            if (buttonClicked) {
+                currentState = OFF;
+                U0prinln("Button pressed, turning sonar off, able to rotate servo");
+            }
+            break;
+        }
     }
-  }  
 
-  // set all LEDs low
-  *my_PORTB &= ~(0b01110000);
-
-  lcd.setCursor(0, 1);
-  lcd.write("               "); // poor mans clear to only change bottom line
-  lcd.setCursor(0,1);
-
-
-  switch(currentState){
-    case OFF:
-        *my_PORTB |= (1 << 6);
-        lcd.print("OFF");
-        break;
-
-    case SCAN:
-        *my_PORTB |= (1 << 5);
-        lcd.print("SCAN");
-        break;
-
-    case DETECT:
-        *my_PORTB |= (1 << 4);
-        lcd.print("DETECT");
-        break;
-  }
-
-  delay(500);
-  
+    delay(200); // short delay to debounce button and reduce flicker
 }
+
 
 
 
 /* HELPER FUNCTIONS */
 bool rotateServo() {
-  int val = analogRead(potPin);
+  int val = adc_read(potPin);
+  lcd.setCursor(0,0);
+  lcd.print("Pot.: ");
+  lcd.print(val);
+  
   int angle = map(val, 0, 1023, 0, 180);
+  lcd.setCursor(0,1);
+  lcd.print("Angle: ");
+  lcd.print(angle);
 
   if(angle != lastAngle) {
     myservo.write(angle);
     lastAngle = angle;
-    delay(15);
+    delay(20);
     return true;
   }
   return false;
@@ -270,4 +309,3 @@ unsigned int adc_read(unsigned char adc_channel_num) //work with channel 0
   unsigned int val = *my_ADC_DATA;
   return val;
 }
-
