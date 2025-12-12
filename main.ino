@@ -188,7 +188,7 @@ float getDistance() {
 }
 
 void setup() {
-  Serial.begin(9600);
+  U0init(9600);
   
   pinMode(scanLED, OUTPUT);
   pinMode(detectLED, OUTPUT);
@@ -215,13 +215,13 @@ void loop() {
   bool rotated = rotateServo();
 
   if (rotated) {
-    Serial.println("Change State to OFF after rotating");
+    U0print("Change State to OFF after rotating");
     currentState = OFF;
   }
   else {
     if (currentState == OFF) {
       currentState = SCAN;
-      Serial.println("Finished moving, change state to scan.");
+      U0print("Finished moving, change state to scan.");
       
     } else {
       float distance = getDistance();
@@ -233,12 +233,12 @@ void loop() {
 
       if (distance > 1.0 && currentState == DETECT) {
         currentState = SCAN;
-        Serial.println("Stop detecting, moved outside 1ft");
+        U0print("Stop detecting, moved outside 1ft");
       }
       else if (distance <= 1.0){
         if (currentState != DETECT) {
           currentState = DETECT;
-          Serial.println("Moved within a foot, detecting");
+          U0print("Moved within a foot, detecting");
         }
 
         
@@ -275,3 +275,32 @@ void loop() {
   delay(500);
   
 }
+
+void U0init(unsigned long U0baud)
+{
+ unsigned long FCPU = 16000000;
+ unsigned int tbaud;
+ tbaud = (FCPU / 16 / U0baud - 1);
+ *myUCSR0A = 0x20;
+ *myUCSR0B = 0x18;
+ *myUCSR0C = 0x06;
+ *myUBRR0  = tbaud;
+}
+
+void U0putchar(unsigned char U0pdata)
+{
+  while (!(*myUCSR0A & TBE));
+
+ *myUDR0 = U0pdata;
+}
+
+//print function that uses the previous U0putchar to make strings
+void U0print(const char* s) 
+{
+  while (*s) 
+  { 
+    U0putchar(*s);       
+    s++;
+  }
+}
+
