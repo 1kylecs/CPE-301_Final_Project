@@ -40,6 +40,7 @@ volatile unsigned char *my_PING = (unsigned char *)0x32;   // PING
 const int trigPin = 3;
 const int echoPin = 2;
 const int servoPin = 4;
+const int buttonPin = 5;
 const int potPin = 0;
 
 const int scanLED = 11;    //yellow
@@ -81,6 +82,7 @@ void setup() {
   myPinMode(detectLED, OUTPUT);
   myPinMode(offLED, OUTPUT);
   myPinMode(buzzerPin, OUTPUT);
+  myPinMode(buttonPin, INPUT);
 
   myPinMode(trigPin, OUTPUT);
   myPinMode(echoPin, INPUT);
@@ -93,7 +95,6 @@ void setup() {
   lcd.begin(16, 2);
 
   myservo.attach(servoPin);
-  rotateServo();
 }
 
 void loop() {
