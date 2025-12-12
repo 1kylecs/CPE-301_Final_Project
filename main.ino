@@ -34,7 +34,7 @@ volatile unsigned char *my_PIND  = (unsigned char *)0x29;
 const int trigPin = 3;
 const int echoPin = 2;
 const int servoPin = 4;
-const int potPin = A0;
+const int potPin = 0;
 
 const int scanLED = 11; //yellow
 const int offLED = 12; //blue
