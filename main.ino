@@ -24,10 +24,6 @@ volatile unsigned char *my_DDRB = (unsigned char *)0x24;
 volatile unsigned char *my_PORTB = (unsigned char *)0x25;
 volatile unsigned char *my_PINB = (unsigned char *)0x23;
 
-volatile unsigned char *my_DDRD = (unsigned char *)0x2A;
-volatile unsigned char *my_PORTD = (unsigned char *)0x2B;
-volatile unsigned char *my_PIND = (unsigned char *)0x29;
-
 volatile unsigned char *my_DDRE = (unsigned char *)0x2D;   // DDRE
 volatile unsigned char *my_PORTE = (unsigned char *)0x2E;  // PORTE
 volatile unsigned char *my_PINE = (unsigned char *)0x2C;   // PINE
@@ -37,17 +33,17 @@ volatile unsigned char *my_PORTG = (unsigned char *)0x34;  // PORTG
 volatile unsigned char *my_PING = (unsigned char *)0x32;   // PING
 
 /* CONSTANTS */
-const int trigPin = 3;
-const int echoPin = 2;
-const int servoPin = 4;
-const int buttonPin = 5;
-const int potPin = 0;
+const int potPin = 0;  // A0
 
-const int scanLED = 11;    //yellow
-const int offLED = 12;     //blue
-const int detectLED = 10;  //green
+const int echoPin =   2;  // PE4
+const int trigPin =   3;  // PE5
+const int servoPin =  4;  // PG5
+const int buttonPin = 5;  // PE3
 
-const int buzzerPin = 13;
+const int detectLED = 10; // PB4
+const int scanLED = 11;   // PB5
+const int offLED = 12;    // PB6
+const int buzzerPin = 13; // PB7
 
 //millis
 unsigned long lastPrint = 0;
@@ -70,8 +66,6 @@ enum DeviceState { OFF,
                    DETECT };
 //default states to off for
 DeviceState currentState = OFF;  //default to off
-DeviceState lastState = OFF;     //default to off
-
 
 /* MAIN FUNCTIONS */
 void setup() {
@@ -98,7 +92,7 @@ void setup() {
 }
 
 void loop() {
-    bool buttonClicked = (HIGH == myDigitalRead(buttonPin);
+    bool buttonClicked = (HIGH == myDigitalRead(buttonPin));
 
     switch (currentState) {
         case OFF: {
@@ -146,7 +140,7 @@ void loop() {
             // transition to OFF if button clicked
             if (buttonClicked) {
                 currentState = OFF;
-                U0prinln("Button pressed, turning sonar off, able to rotate servo");
+                U0println("Button pressed, turning sonar off, able to rotate servo");
             }
             break;
         }
@@ -175,7 +169,7 @@ void loop() {
             // transition to OFF if button clicked
             if (buttonClicked) {
                 currentState = OFF;
-                U0prinln("Button pressed, turning sonar off, able to rotate servo");
+                U0println("Button pressed, turning sonar off, able to rotate servo");
             }
             break;
         }
@@ -252,7 +246,7 @@ void debugPrint(const char *msg) {
 /* CUSTOM digitalWrite / pinMode */
 
 void myPinMode(uint8_t pin, uint8_t mode) {
-  // take what pin number given, find the right DDR and set to either 0 or 1
+ // take what pin number given, find the right DDR and set to either 0 or 1
   switch (pin) {
     case 2:  // PE4
       if (mode) *my_DDRE |= (1 << 4);
@@ -267,6 +261,11 @@ void myPinMode(uint8_t pin, uint8_t mode) {
     case 4:  // PG5
       if (mode) *my_DDRG |= (1 << 5);
       else *my_DDRG &= ~(1 << 5);
+      break;
+
+    case 5: // PE3
+      if (mode) *my_DDRE |= (1 << 3);
+      else *my_DDRE &= ~(1 << 3);
       break;
 
     case 10:  // PB4
@@ -309,6 +308,11 @@ void myDigitalWrite(uint8_t pin, uint8_t val) {
       else *my_PORTG &= ~(1 << 5);
       break;
 
+    case 5:
+      if (val) *my_PORTE |= (1 << 3);
+      else *my_PORTE &= ~(1 << 3);
+      break;
+
     case 10:
       if (val) *my_PORTB |= (1 << 4);
       else *my_PORTB &= ~(1 << 4);
@@ -336,6 +340,7 @@ uint8_t myDigitalRead(uint8_t pin) {
     case 2: return (*my_PINE & (1 << 4)) ? HIGH : LOW;
     case 3: return (*my_PINE & (1 << 5)) ? HIGH : LOW;
     case 4: return (*my_PING & (1 << 5)) ? HIGH : LOW;
+    case 5: return (*my_PINE & (1 << 3)) ? HIGH : LOW;
 
     case 10: return (*my_PINB & (1 << 4)) ? HIGH : LOW;
     case 11: return (*my_PINB & (1 << 5)) ? HIGH : LOW;
