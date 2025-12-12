@@ -23,10 +23,6 @@ volatile unsigned char *my_DDRD  = (unsigned char *)0x2A;
 volatile unsigned char *my_PORTD = (unsigned char *)0x2B;
 volatile unsigned char *my_PIND  = (unsigned char *)0x29;
 
-volatile unsigned char *my_DDRH  = (unsigned char *)0x31;
-volatile unsigned char *my_PORTH = (unsigned char *)0x30;
-volatile unsigned char *my_PINH  = (unsigned char *)0x2F;
-
 
 /* Pin lables
  *  echoPin   - pin 2  - regD bit 2
