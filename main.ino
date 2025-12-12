@@ -97,104 +97,90 @@ void setup() {
 }
 
 void loop() {
-
-  bool rotated = rotateServo();
-  // U0println(myDigitalRead(echoPin) ? "HIGH" : "LOW");
-
-
-  if (rotated) {
-    // debugPrint("Change State to OFF after rotating");
-    currentState = OFF;
-  } else {
-    if (currentState == OFF) {
-      currentState = SCAN;
-      // debugPrint("Finished moving, change state to scan.");
-
-    } else {
-      float distance = getDistance();
-
-      char dist[16];                  //hold the distance
-      dtostrf(distance, 6, 2, dist);  //arduino function to convert distance to a string
-
-      U0println(dist);
-
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Distance: ");
-      lcd.print(distance);
-
-      if (distance > 1.0 && currentState == DETECT) {
-        currentState = SCAN;
-        // debugPrint("Stop detecting, moved outside 1ft");
-      } else if (distance <= 1.0) {
-        if (currentState != DETECT) {
-          currentState = DETECT;
-          // debugPrint("Moved within a foot, detecting");
-        }
-      }
-    }
-  }
-
-  // myDigitalWrite(scanLED, LOW);
-  // myDigitalWrite(detectLED, LOW);
-  // myDigitalWrite(offLED, LOW);
-
-  // lcd.setCursor(0, 1);
-  // lcd.write("               ");  // poor mans clear to only change bottom line
-  // lcd.setCursor(0, 1);
-
-
-  // switch (currentState) {
-  //   case OFF:
-  //     myDigitalWrite(offLED, HIGH);
-  //     lcd.print("OFF");
-  //     break;
-
-  //   case SCAN:
-  //     myDigitalWrite(scanLED, HIGH);
-  //     lcd.print("SCAN");
-  //     break;
-
-  //   case DETECT:
-  //     myDigitalWrite(detectLED, HIGH);
-  //     lcd.print("DETECT");
-  //     break;
-  // }
-
-  //less flcikery LED's, dont turn off every time before, just adjusts to current state
-  if (currentState != lastState) {
-    // turn all LEDs off first
-    myDigitalWrite(scanLED, LOW);
-    myDigitalWrite(detectLED, LOW);
-    myDigitalWrite(offLED, LOW);
-
-    // turn on LED for current state and update LCD
-    lcd.setCursor(0, 1);
-    lcd.write("               ");  // clear bottom line
-    lcd.setCursor(0, 1);
+    bool buttonClicked = (HIGH == myDigitalRead(buttonPin);
 
     switch (currentState) {
-      case OFF:
-        myDigitalWrite(offLED, HIGH);
-        lcd.print("OFF");
-        break;
-      case SCAN:
-        myDigitalWrite(scanLED, HIGH);
-        lcd.print("SCAN");
-        break;
-      case DETECT:
-        myDigitalWrite(detectLED, HIGH);
-        lcd.print("DETECT");
-        break;
+        case OFF: {
+            // blue LED on, others off
+            myDigitalWrite(scanLED, LOW);
+            myDigitalWrite(detectLED, LOW);
+            myDigitalWrite(offLED, HIGH);
+
+            // read potentiometer and move servo
+            rotateServo();
+
+            // display angle on LCD
+            lcd.setCursor(0, 0);
+            lcd.print("Angle: ");
+            lcd.print(lastAngle);
+
+            // transition to SCAN if button clicked
+            if (buttonClicked) {
+                currentState = SCAN;
+                U0println("Button clicked, transitioning into scan, locking servo");
+            }
+            break;
+        }
+
+        case SCAN: {
+            // yellow LED on, others off
+            myDigitalWrite(scanLED, HIGH);
+            myDigitalWrite(detectLED, LOW);
+            myDigitalWrite(offLED, LOW);
+
+            // measure distance
+            float distance = getDistance();
+
+            // display distance
+            lcd.setCursor(0, 0);
+            lcd.print("Distance: ");
+            lcd.print(distance);
+
+            // transition to DETECT if distance < 5 but not 0 ( 0 means time out, so also invalid)
+            if (distance > 0 && distance < 5.0) {
+                currentState = DETECT;
+                U0println("Moved within 5ft of scanner, detected");
+            }
+
+            // transition to OFF if button clicked
+            if (buttonClicked) {
+                currentState = OFF;
+                U0prinln("Button pressed, turning sonar off, able to rotate servo");
+            }
+            break;
+        }
+
+        case DETECT: {
+            // green LED on, others off
+            myDigitalWrite(scanLED, LOW);
+            myDigitalWrite(detectLED, HIGH);
+            myDigitalWrite(offLED, LOW);
+
+            // measure distance
+            float distance = getDistance();
+
+            // display distance
+            lcd.setCursor(0, 0);
+            lcd.print("Distance: ");
+            lcd.print(distance);
+
+            // transition to SCAN if distance > 5
+            if (distance > 5.0) {
+                currentState = SCAN;
+                U0println("Moved outside 5ft, scanning");
+                
+            }
+
+            // transition to OFF if button clicked
+            if (buttonClicked) {
+                currentState = OFF;
+                U0prinln("Button pressed, turning sonar off, able to rotate servo");
+            }
+            break;
+        }
     }
 
-    lastState = currentState;  // update lastState
-  }
-
-  //delays lastUpdate without freezing the program
-  if (millis() - lastUpdate >= 500) {
-    lastUpdate = millis();
-  }
+    delay(200); // short delay to debounce button and reduce flicker
 }
 
 
