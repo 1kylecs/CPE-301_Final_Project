@@ -12,6 +12,8 @@
 
 #define RDA 0x80
 #define TBE 0x20
+#define DEBOUNCE_TICKS 40
+
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
 volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
 volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2;
@@ -38,6 +40,13 @@ volatile unsigned char *my_PINE = (unsigned char *)0x2C;   // PINE
 volatile unsigned char *my_DDRG = (unsigned char *)0x33;   // DDRG
 volatile unsigned char *my_PORTG = (unsigned char *)0x34;  // PORTG
 volatile unsigned char *my_PING = (unsigned char *)0x32;   // PING
+
+/*TIMER Pointers*/ //using timer2 because servo library uses timer1
+volatile unsigned char *my_TCCR2A = (unsigned char *)0xB0;
+volatile unsigned char *my_TCCR2B = (unsigned char *)0xB1;
+volatile unsigned char *my_TIMSK2 = (unsigned char *)0x70;
+volatile unsigned char *my_OCR2A  = (unsigned char *)0xB3;
+
 
 /* CONSTANTS */
 const int trigPin = 3;
@@ -66,10 +75,10 @@ unsigned long lastLoopUpdate = 0;       // tracks last update time
 const unsigned long loopInterval = 50;  // 50ms interval instead of delay()
 
 //button
-unsigned long lastButtonTime = 0;
-const unsigned long buttonDebounce = 200;  // ms
-bool lastButtonState = LOW;
-bool buttonPressed = false;
+volatile bool buttonEvent = false;
+volatile bool buttonStableState = HIGH;
+volatile bool lastButtonSample = HIGH;
+volatile unsigned int debounceCounter = 0;
 
 //create servo obj
 Servo myservo;
@@ -94,6 +103,14 @@ DeviceState lastState = OFF;     //default to off
 void setup() {
   U0init(9600);
   adc_init();
+
+  //button ISR setup
+  myPinMode(buttonPin, INPUT);
+  *my_PORTE |= (1 << 3);  //pull-up enabled
+
+  setupButtonTimer();
+  sei();
+
 
   //setup rtc for timestamps
   Wire.begin();
@@ -124,7 +141,13 @@ void setup() {
 }
 
 void loop() {
-  bool buttonClicked = checkButton();
+  //button isr
+  bool buttonClicked = false;
+
+  if (buttonEvent) {
+    buttonClicked = true;
+    buttonEvent = false;
+  }
 
   switch (currentState) {
     case OFF:
@@ -248,7 +271,7 @@ bool rotateServo() {
 //distance helper function
 float getDistance() {
   myDigitalWrite(trigPin, LOW);
-  delayMicroseconds(2); //delayMicroseconds() is needed so that we can have accurate distance readings, otherwise might be inaccurate with milliseconds and not microseconds
+  delayMicroseconds(2);
   myDigitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   myDigitalWrite(trigPin, LOW);
@@ -400,30 +423,30 @@ uint8_t myDigitalRead(uint8_t pin) {
   return LOW;
 }
 
-//button helper function for debounce with millis()
-bool checkButton() {
-  bool reading = myDigitalRead(buttonPin);
-  unsigned long now = millis();
+// //button helper function for debounce with millis()
+// bool checkButton() {
+//   bool reading = myDigitalRead(buttonPin);
+//   unsigned long now = millis();
 
-  // If button changed state
-  if (reading != lastButtonState) {
-    lastButtonTime = now;  // reset debounce timer
-  }
+//   // If button changed state
+//   if (reading != lastButtonState) {
+//     lastButtonTime = now;  // reset debounce timer
+//   }
 
-  // Only consider the press if it’s stable past debounce time
-  if ((now - lastButtonTime) > buttonDebounce) {
-    if (reading == HIGH && !buttonPressed) {
-      buttonPressed = true;  // single press detected
-      lastButtonState = reading;
-      return true;
-    } else if (reading == LOW) {
-      buttonPressed = false;  // release detected
-    }
-  }
+//   // Only consider the press if it’s stable past debounce time
+//   if ((now - lastButtonTime) > buttonDebounce) {
+//     if (reading == HIGH && !buttonPressed) {
+//       buttonPressed = true;  // single press detected
+//       lastButtonState = reading;
+//       return true;
+//     } else if (reading == LOW) {
+//       buttonPressed = false;  // release detected
+//     }
+//   }
 
-  lastButtonState = reading;
-  return false;
-}
+//   lastButtonState = reading;
+//   return false;
+// }
 
 /* ANALOG READ */
 /* ANALOG READ */
@@ -486,7 +509,7 @@ unsigned int adc_read(unsigned char adc_channel_num)  //work with channel 0
 
 //pulseIn to work with getDistance() and myDigitalRead()
 unsigned long myPulseIn(uint8_t pin, uint8_t state, unsigned long timeout) {
-  unsigned long start = micros(); //using micros similar to delayMicroseconds(), need higher precision for the ultrasonic sensor to read distance accurately
+  unsigned long start = micros();
 
   //waits for pin to read a certain state
   while (myDigitalRead(pin) != state) {
@@ -537,8 +560,46 @@ void printTimestamp() {
   U0putchar(' ');
 }
 
-//prints messgae with timestamp
+//prints message with timestamp
 void logMessage(const char *msg) {
   printTimestamp();
   U0println(msg);
+}
+
+/*Button ISR*/
+void setupButtonTimer()
+{
+  *my_TCCR2A = (1 << 1);
+  *my_TCCR2B = 0x00;
+  *my_OCR2A = 124; //5ms
+  *my_TIMSK2 |= (1 << 1); //enable interrupts
+  *my_TCCR2B |= (1 << 2) | (1 << 0); //128 prescaler
+}
+
+
+//CTC ISR
+ISR(TIMER2_COMPA_vect)
+{
+  bool sample = myDigitalRead(buttonPin);
+
+  if (sample == lastButtonSample)
+  {
+    if (debounceCounter < DEBOUNCE_TICKS)
+      debounceCounter++;
+    else
+    {
+      if (sample != buttonStableState)
+      {
+        buttonStableState = sample;
+        if (buttonStableState == LOW)
+          buttonEvent = true;
+      }
+    }
+  }
+  else
+  {
+    debounceCounter = 0;
+  }
+
+  lastButtonSample = sample;
 }
