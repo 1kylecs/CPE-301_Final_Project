@@ -1,3 +1,6 @@
+// Miles Rasmussen
+// Kyle Kaiser
+
 #include <LiquidCrystal.h>
 #include <Servo.h>
 #include <Wire.h>
